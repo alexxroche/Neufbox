@@ -1,0 +1,277 @@
+#!/usr/bin/env perl
+# html2xpath ver 0.1 201707131405 alexx at alexx dot net
+
+use strict;
+use Data::Dumper;
+$|=1;
+
+=head1 NAME
+
+html2xpath
+
+=head1 VERSION
+
+0.1
+
+=cut
+
+our $VERSION = 0.1;
+
+=head1 ABSTRACT
+
+parse html and spit out the chunk that you want
+
+=head1 DESCRIPTION
+
+This is designed to extract a piece of an html page
+
+=head1 OPTIONS
+
+%opt stores the global variables
+%ignore overrides %opt
+
+=cut
+
+my $html='';
+my %opt=(D=>0);
+my $file;#=$ARGV[0];
+my $nodes;#=$ARGV[1];
+my $selectors;#=$ARGV[2];
+my $selector;#=$ARGV[2]; alternative
+
+=head2 Usage
+
+    Usage: html2xpath filename HTML_TAG [selector] [node]
+
+    e.g.  html2xpath index.html select id=month 1
+
+=head1 NTS TODO
+
+    We should be able to specify desired nodes in xpath form 
+    select id="month" 7 option class="enabled" 2
+    would search for 
+    my $f=$tree->findnodes("//select[@id="month"]")->[7];
+    my $g=$f->findnodes("//option[@class="enabled"]")->[2];
+    print $g->as_HTML;
+
+=head3 help
+
+    Just the help output
+
+=cut
+
+sub help {
+    print `perldoc $0`;
+    #print "Usage: $0\n";
+    #&footer;
+    exit(0);
+}
+
+my %BASH_colours = (
+'Black'        =>'0;30',     'Dark_Gray'     =>'1;30',
+'Red'          =>'0;31',     'Light_Red'     =>'1;31',
+'Green'        =>'0;32',     'Light_Green'   =>'1;32',
+'Brown_Orange' =>'0;33',     'Yellow'        =>'1;33',
+'Blue'         =>'0;34',     'Light_Blue'    =>'1;34',
+'Purple'       =>'0;35',     'Light_Purple'  =>'1;35',
+'Cyan'         =>'0;36',     'Light_Cyan'    =>'1;36',
+'Light_Gray'   =>'0;37',     'White'         =>'1;37',
+'null'         =>'0', # remove colour
+);
+
+sub dye {
+    my $colour=shift;
+    if($BASH_colours{$colour}){
+        return "\033[$BASH_colours{$colour}m";
+    }else{
+        return "\033[$BASH_colours{'null'}m";
+    }
+    
+}
+
+sub report {                
+    my $s = shift;
+    #foreach my $c (keys %BASH_colours){
+    #    print "\033[$BASH_colours{$c}mLOG\033[$BASH_colours{null}m: $s\n";
+    #}
+    print dye('Red') . "LOG" . dye('null') . ": " . dye('Light_Blue') . $s . dye('null') . "\n";
+    #exit(2);
+}
+sub debug {                
+    if($opt{D}>=1){
+        my $s = shift;
+        print "DEBUG: $s\n";
+        #exit(2);
+    }
+}
+sub warning {
+    my $s = shift;
+    print "WARNING: $s\n";
+    #exit(1);
+}
+
+sub error {                
+    my $s = shift;
+    print "ERROR: $s\n";
+    exit(2);
+}
+
+
+=head3 getopt_quick
+
+    getopt-long is overkill
+
+=cut
+
+for(my $args=0;$args<=(@ARGV -1);$args++){
+    if ($ARGV[$args]=~m/^-+h/i){ &help; }
+    elsif ($ARGV[$args] eq '-d'){ $opt{D}++; }
+    elsif (-f "$ARGV[$args]"){ $file=$ARGV[$args]; }
+    elsif ($ARGV[$args]=~m/^(href|src|alt)/){ $selector.=$ARGV[$args]; chomp($selector);}
+    elsif ($ARGV[$args]=~m/^\w+=["']?\w+["']?$/){ $selectors=$ARGV[$args];}
+    elsif ($ARGV[$args]=~m/^\d+$/){ $opt{element}=$ARGV[$args];} # which node
+    elsif ($ARGV[$args]=~m/^\D+$/){ $nodes=$ARGV[$args];}
+    else { print "Not sure what '$ARGV[$args]' is for\n"; }
+}
+unless($opt{element}){ $opt{element}=0;}
+
+debug("reading $file looking for '$nodes' with '$selectors' and print $opt{element}\n");
+
+if(-e "$file"){
+    open(HTML, "<$file");
+    while(<HTML>){
+        $html .= $_;
+    }
+    close(HTML);
+}else{
+    # should check if we are getting anything piped in
+    while(<STDIN>){
+        $html .= $_;
+    }
+}
+
+# Now we need to extract all of the tags and their id,name and classes
+
+use HTML::TreeBuilder::XPath;
+my $tree = HTML::TreeBuilder::XPath->new;
+if ($html ne ''){
+    $tree->parse_content("$html");
+}else{
+    print "HTML is blank";
+    &help;
+    exit(2);
+}
+
+#my (@id);
+#@id = $tree->look_down('id' => qr/.+/); # this seems to be faster than the previous
+#@markers = $tree->look_down(sub{ $_[0]->attr('id') ne '' || $_[0]->attr('name') ne '' || $_[0]->attr('class') ne '' } );
+#my $p= $tree->findnodes( '//select[@id="chapters"]')->[0];
+if ($selectors!~m/"$/ && $selectors=~m/^[^=]+=[^=]+$/){
+    $selectors=~s/=/="/;
+    $selectors .='"';
+#}elsif( $selector=~m/^(href|src|alt)$/ ){
+#   print "selector: //$nodes/[\@$selector]  SLCT:$selectors\n";
+#}else{
+#    print "ONLY: $selector \n";
+}
+
+if($tree && $nodes && $selectors){
+  my $p= $tree->findnodes("//${nodes}[\@$selectors]")->[$opt{element}];
+  if ($p){
+    report($p->as_HTML . "\n");
+    exit;
+  }
+  my @options;
+  #eval { # 20190322123106 this started throwing errors on: `$0 $file.html table id="wifi_assoc"`
+	#Can't call method "findnodes" on an undefined value at html2xpath line 185.
+        # 20190910173306
+        #Can't call method "findnodes" on an undefined value at /home/alexx/bin/html2xpath line 187.
+   if($p){
+    @options = $p->findnodes('option' => qr/.+/);
+    foreach my $option (@options){
+        print $option->as_HTML . "\n";
+    }
+   }
+  #};
+}elsif($nodes && $selector){
+    my @o = $tree->findnodes("//${nodes}/\@$selector");
+    foreach my $o (@o){
+        print $o->getValue . "\n";
+    }
+}elsif($nodes){
+    if ($opt{element}){
+        my $p= $tree->findnodes("//${nodes}")->[$opt{element}];
+        print $p->as_HTML . "\n";
+    }else{
+        my @p= $tree->findnodes("//${nodes}");
+        foreach my $op (@p){
+            ##print $op->to_literal . "\n";
+            print $op->as_HTML . "\n"; #2020-05-26 Can't locate object method "as_HTML" via package "XML::XPathEngine::NodeSet"
+            #print $op->string_value . "\n";
+            #print Dumper($op) . "\n";
+        }
+    }
+}
+
+__DATA__
+
+#}
+
+#print Dumper(@markers);
+#}
+
+                    my $page_title = HTML::Element->new('~literal', 'text' => "$this_title");
+                    my $title = $tree->look_down( sub { $_[0]->tag() eq 'title'});                                                                                        
+                    my $span = $tree->look_down('id' => 'page');                                                                                                          
+
+                        my $pan = $tree->find('body');                                                                                                                    
+                        if($pan){
+                            $pan->push_content($page_body);
+                        }
+                    my $footer = $tree->look_down('id' => qr/^foot(er)?$/);
+                      if($footer){
+                        my $cont = $footer->look_down( sub { $_[0]->attr('class') eq 'container' });
+                        if($cont){
+ 
+my $template = $tree->as_HTML;
+print $template;
+
+
+##### end of code
+
+=head1 BUGS AND LIMITATIONS
+
+There are no known problems with this module.
+
+Please report any bugs or feature requests
+
+=head1 SEE ALSO
+
+#h2x
+
+=head1 MAINTAINER
+
+is the AUTHOR
+
+=head1 AUTHOR
+
+Alexx Roche, C<< <notice-dev at alexx.net> >>
+
+=head1 LICENSE AND COPYRIGHT
+
+Copyright 2017 Alexx Roche, all rights reserved.
+
+This program is free software; you can redistribute it and/or modify it
+under the terms of either: MIT License, Version 1.0 ; 
+ the GNU Lesser General Public License as published 
+by the Free Software Foundation; or the Artistic License.
+
+See http://www.opensource.org/licenses/ for more information.
+
+=cut
+
+print "Done that\n" if $opt{verbose}>=1;
+exit(0);
+__END__
+
+# __END__ is usally only used if we are going to have POD after the code

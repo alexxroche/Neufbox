@@ -1,0 +1,43 @@
+#!/bin/bash
+
+{ # If LxR BASH lib is installed
+# import lib
+CORE=~/lib/bash/core.bash;
+[ "$BASH_LIB" ] || . $CORE;
+. $BASH_LIB/OS.bash 2>/dev/null
+
+if [ $? -eq 0 ];then # check for lib
+    BIN='feh'
+    FEH="$(is_installed $BIN)"
+    if [ $? -ne 0 ]; then
+        echo "Need to install $BIN" >&2
+        $(install $BIN 1>/dev/null)
+    fi
+fi
+}
+
+shopt -s nullglob
+if [[ ! -f "$1" ]]; then
+    if [[ ! "$1" ]]; then
+        set $(pwd)/.
+        echo "$1" >&2
+    else
+        echo "$(basename "$0"): first argument is not a file" >&2
+        exit 1
+    fi
+fi
+
+file=$(basename -- "$1")
+dir=$(dirname -- "$1")
+arr=()
+shift
+
+cd -- "$dir"
+
+for i in *; do
+    [[ -f $i ]] || continue
+    arr+=("$i")
+    [[ $i == $file ]] && c=$((${#arr[@]} - 1))
+done
+
+exec feh --auto-rotate -F -Z -x "$@" -- "${arr[@]:c}" "${arr[@]:0:c}"

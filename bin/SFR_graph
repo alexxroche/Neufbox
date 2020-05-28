@@ -1,0 +1,11 @@
+#!/bin/sh
+
+# move to location of rrdbs
+cd "$(dirname $(readlink -f $0))/../var/"
+
+for rrd in $(find . -name "*derive*.rrd"); do
+ cd $(dirname $rrd)
+ ../bin/derived_rrd_graph.sh $(basename $rrd)
+ find . -name "*.rrd" -exec ../bin/rrd_my_grapher {} \;
+ cd ..
+done

@@ -1,0 +1,8 @@
+#!/bin/sh
+# turn html into txt (and format it nicely)
+
+# https://stackoverflow.com/a/24374131/1153645
+html2ascii_words.pl "$@"|fmt -87|sed '/\S/,/^\s*$/!d'
+#html2ascii_words.pl "$@"|fmt -87|sed -r 's/^\s+$//'|cat -s
+##html2ascii_words.pl "$@"|fmt -87|pr -JT|sed -r 's/^\s+$//'|cat -s
+##html2ascii_words.pl "$@"|fmt -100|awk '!NF && !a++; NF {print;a=0}'

@@ -1,0 +1,17 @@
+#!/bin/sh
+#rdfa.deps="[sh touch cd dirname readlink grep cut tr rsync]"
+#touch $(basename $0) #debug
+
+# move to location of script
+cd "$(dirname $(readlink -f $0))/../var"
+
+CFG='../etc/SFR.cfg'
+WANTED="$(grep WATCH $CFG|cut -d= -f2|tr ',' '\n'|tr -d '[ ],"')"
+PUBLIC_HTML="$(readlink -f $(echo $HOME|tr -d '\n';grep PUBLIC_HTML $CFG|cut -d= -f2|tr -d '~"'))"
+echo "$WANTED"|while read i; do
+  #echo "$i to $PUBLIC_HTML"; continue
+
+	rsync -mauvPAX -f"- *.rrd" ./$i/ $PUBLIC_HTML/$(echo $i|tr ':' '_'|tr -d '\n') 2>/dev/null 1>/dev/null
+done
+
+exit 0

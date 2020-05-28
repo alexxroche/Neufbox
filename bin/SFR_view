@@ -1,0 +1,8 @@
+#!/bin/sh
+ 
+# move to location of graphs
+cd "$(dirname $(readlink -f $0))/../var"
+
+CFG='../etc/SFR.cfg'
+TEST_IMG_DIR="$(grep whitelist_MAC $CFG|cut -d= -f2|tr ',' '\n'|tr -d '[ ],"'|head -n1)"
+fey ./$TEST_IMG_DIR/uptime_wifi_client_rrd_absolute_day.PNG 2>/dev/null

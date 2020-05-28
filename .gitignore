@@ -1,0 +1,8 @@
+.DS_Store*
+._*
+desktop.ini
+.dropbox*
+var
+*.swp
+*__pycache__*
+*.pyc

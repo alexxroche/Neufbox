@@ -1,0 +1,126 @@
+#!/bin/sh
+
+xhelp(){
+	echo "Usage: $(basename $0) any_database.rrd"
+	exit 1
+}
+
+IMG_TYPE="PNG"
+
+if [ ! "$1" ];then
+	xhelp
+elif [ "$1" ] && echo "$*"|grep -q '\-h'; then
+	xhelp
+else
+	[ ! -f "$1" ]&& xhelp
+	echo "$(file -b $1)"|grep -q '^RRDTool'|| xhelp
+
+	RRD_COLS=$( rrdtool info "$1"|grep ^ds|sed 's/.*\[\(.*\)\].*/\1/'|sort -u)
+	RRD_TYPES=$( rrdtool info "$1"|grep type|sed 's/.* = "//'|tr -d '"'|tr ' ' '\n')
+	# this would be easier with a language that natively understood multi-dimentional arrays
+
+	LOCATION=$(dirname "$*")
+	if [ "$LOCATION" ]; then
+		#echo "moving into $LOCATION" >&2
+	 	cd $LOCATION
+	fi
+	DB=$(basename "$*")
+	OUT_IMG=${DB%.rrd}
+	#OUT_IMG=${DB%.rrd}.$IMG_TYPE
+	OUT="$LOCATION/$OUT_IMG"
+
+    if [ "$DEBUG" ]; then
+	echo "In $(dirname "$*") we have $(basename "$*"): "
+	echo "$RRD_COLS"|while read c; do
+		echo "$c is [$(echo "$RRD_TYPES"|head -n1)]"
+		RRD_TYPES="$(echo "$RRD_TYPES"|tail -n1)" # "shift for strings"
+	done
+    fi
+    if [ "$DEBUG" ]&&[ -f "$OUT" ]; then
+		echo "Overwrite [$OUT] ? [Y/n] "|tr -d '\n'
+		#[ -t 0 ] && stty -echo
+	read -r YN </dev/tty
+	[ -t 0 ] && stty echo
+	#if echo "$YN"|grep -qiE 'o(ui)?|y(es)?'; then
+	if echo "$YN"|grep -qiE 'n(o(n)?)?'; then
+	   echo "Leaving $OUT untouched; exiting"
+	   exit 0
+	fi
+	echo "We are going to graph it as $OUT"
+     fi
+	TITLE="$DB"
+	Width=600
+	Height=200
+	DB_fn=$(readlink -f "$*")
+
+week='0f09'
+day='f009'
+hour='ff09'
+month='0ff9'
+year='00f9'
+
+hour_b='aaa'
+day_b='bbb'
+week_b='eee'
+month_b='999'
+year_b='666'
+
+	# sometimes rrdtool doesn't graph to the end of the x-axis (or the x-axis is longer than
+	#  the data available.) Here we force the graph to snap to the previous whole five minute mark.
+	END="-$(( ( $(printf "%.0f" $(date +%M)) % 5 ) * 60 + $(printf "%.0f" $(date +%S)) + 25 ))s"
+	# (we also add 25 seconds to compensate for cron not running at the top of the minute, and network delays)
+	#END="$(( $(date +%s) - ( ( $(printf "%.0f" $(date +%M)) % 5 ) * 60 + $(printf "%.0f" $(date +%S)) )  ))"
+	cron=$(tty -s;echo $?)
+	if [ "$cron" ]&&[ "$cron" -eq 1 ]; then sleep 15; fi
+	#echo "FOUND $RRD_COLS in $DB"
+    for period in hour day week month year;do
+
+#	/usr/bin/rrdtool graph $LOCATION/$(basename "$OUT")_${period}.$IMG_TYPE -a $IMG_TYPE --lower-limit 0 \
+#"DEF:${RRD_COLS}=$DB:${RRD_COLS}:AVERAGE" \
+#"LINE:${RRD_COLS}#00dd00:${RRD_COLS} " \
+
+
+        # if uptime + gauge ; then the units are seconds (and "average" is less useful than "total")
+        # packets + counter is useful (but again "Total" would be of more use than average)
+        # packets + derived is pretty
+  	eval colour=\$$period
+  	eval b_c=\$${period}_b
+	# --full-size-mode --only-graph
+        #-c "SHADEA#000000" \
+        #-c "SHADEB#000000" \
+        #-c "FONT#DDDDDD" \
+        #-c "CANVAS#202020" \
+        #-c "GRID#666666" \
+        #-c "MGRID#AAAAAA" \
+        #-c "ARROW#FFFFFF" \
+	# --lower-limit 0 \
+        # --watermark "Last updated $(date +%Y-%m-%d\ %H:%M:%S\ %Z)" \
+	/usr/bin/rrdtool graph $LOCATION/$(basename "$OUT")_${period}.$IMG_TYPE -a $IMG_TYPE \
+--title="$TITLE - [$period]" -z -w $Width -h $Height --start -1$period \
+--watermark "Last updated $(date +%Y-%m-%d\ %H:%M:%S\ \%z\ \(%Z\))" \
+--font WATERMARK:8 --end $END \
+        -c "BACK#$b_c" \
+        -c "FRAME#$colour" \
+        -c "SHADEA#$colour" \
+        -c "SHADEB#$b_c" \
+"DEF:${RRD_COLS}=$DB:${RRD_COLS}:AVERAGE:step=1" \
+"DEF:${RRD_COLS}_min=$DB:${RRD_COLS}:MIN" \
+"DEF:${RRD_COLS}_max=$DB:${RRD_COLS}:MAX" \
+"VDEF:${RRD_COLS}_95=${RRD_COLS},95,PERCENTNAN" \
+"HRULE:${RRD_COLS}_95#aa000085:95% \g" \
+"GPRINT:${RRD_COLS}_95:%5.2lf" \
+"VDEF:${RRD_COLS}_a=${RRD_COLS},AVERAGE" \
+"HRULE:${RRD_COLS}_a#009966A0:Ave\g" \
+"GPRINT:${RRD_COLS}_a:%5.2lf" \
+"LINE:${RRD_COLS}#00dd00:${RRD_COLS} " \
+"GPRINT:${RRD_COLS}:LAST:Last $RRD_COLS\: %6.0lf %s " \
+"GPRINT:${RRD_COLS}:AVERAGE:Avg $RRD_COLS \: %6.0lf %s " \
+"GPRINT:${RRD_COLS}:MIN:Min $RRD_COLS \: %6.0lf %s " \
+"GPRINT:${RRD_COLS}:MAX:Max $RRD_COLS \: %6.0lf %s \j" \
+1>/dev/null
+done
+
+    if [ -f "$OUT" ]; then
+	    fey ${OUT}_day.$IMG_TYPE
+    fi
+fi
